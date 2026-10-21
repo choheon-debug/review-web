@@ -1,0 +1,16 @@
+{
+  "name": "반복학습",
+  "short_name": "반복학습",
+  "description": "망각곡선에 맞춰 복습 날짜를 알려 주는 반복학습 앱",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F8F6FF",
+  "theme_color": "#F8F6FF",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
