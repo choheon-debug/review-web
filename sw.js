@@ -1,6 +1,6 @@
 // 앱 파일을 휴대폰에 저장해 두어 인터넷이 잠깐 끊겨도 열리게 한다.
 // 앱을 고칠 때마다 VERSION을 올려야 새 버전이 퍼진다.
-const VERSION = "review-web-3";
+const VERSION = "review-web-4";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./gowun-batang-bold.woff2",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
 
@@ -18,7 +18,14 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
-  const key = req.mode === "navigate" ? "./index.html" : req;
+  // 앱 화면은 인터넷에서 먼저 받아 와서 고친 내용이 바로 보이게 한다 (끊겼을 때만 저장해 둔 것)
+  if (req.mode === "navigate") {
+    e.respondWith(caches.open(VERSION).then(cache =>
+      fetch(req, { cache: "no-store" }).then(res => { if (res.ok) cache.put("./index.html", res.clone()); return res; })
+        .catch(() => cache.match("./index.html"))));
+    return;
+  }
+  const key = req;
   e.respondWith(caches.open(VERSION).then(async cache => {
     const hit = await cache.match(key, { ignoreSearch: true });
     const net = fetch(req).then(res => {

@@ -91,8 +91,8 @@ button{cursor:pointer}
 
 .due-row{background:var(--surface);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
 .due-row .card{box-shadow:none;border-radius:0}
-.due-row .acts{display:grid;grid-template-columns:2fr 1fr;gap:8px;padding:0 12px 12px}
-.pill{border:0;border-radius:99px;padding:11px 10px;font-weight:700;font-size:.92rem}
+.due-row .acts{display:grid;grid-template-columns:3fr 2fr;gap:8px;padding:0 12px 12px}
+.pill{border:0;border-radius:99px;padding:11px 10px;font-weight:700;font-size:.92rem;white-space:nowrap}
 .pill.fill,.btn.done{background:var(--done-btn);color:#fff;box-shadow:0 4px 12px var(--done-btn-shadow)}
 .pill.tonal,.btn.retry{background:var(--retry-btn);color:#fff;box-shadow:0 4px 12px var(--retry-btn-shadow)}
 
@@ -165,8 +165,13 @@ button{cursor:pointer}
 .dialog .acts button.go{background:var(--grad);color:#fff}
 .dialog .acts button.go.danger{background:var(--danger);color:#fff}
 
-.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 16px;font-size:.9rem;display:flex;gap:14px;align-items:center;z-index:60;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgb(0 0 0 / .2)}
-.toast button{border:0;background:none;color:var(--hero-a);font-weight:700;padding:2px}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 16px;font-size:.9rem;display:flex;gap:14px;align-items:center;z-index:60;width:max-content;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgb(0 0 0 / .2)}
+.toast button{border:0;background:none;color:var(--hero-a);font-weight:700;padding:2px;flex:none;white-space:nowrap}
+.tabs{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--surface);border-radius:99px;padding:5px;box-shadow:var(--shadow)}
+.tab{border:0;background:none;border-radius:99px;padding:11px 8px;font-weight:700;font-size:.97rem;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px}
+.tab.on{background:var(--grad);color:#fff;box-shadow:0 4px 12px var(--grad-shadow)}
+.tab b{min-width:22px;border-radius:99px;padding:1px 7px;font-size:.76rem;background:var(--late-bg);color:var(--late-fg)}
+.tab.on b{background:rgb(255 255 255 / .28);color:#fff}
 .steps{margin:0;padding-left:1.3em;line-height:1.7;font-size:.92rem}
 </style>
 </head>
@@ -196,6 +201,25 @@ button{cursor:pointer}
     <button class="linkbtn" id="btnClearSamples">예시 지우기</button>
   </div>
 
+  <div class="tabs" role="tablist">
+    <button class="tab" type="button" role="tab" data-tab="plan">📝 학습계획 <b id="tabPlanN" hidden></b></button>
+    <button class="tab" type="button" role="tab" data-tab="review">🔁 복습 <b id="tabReviewN" hidden></b></button>
+  </div>
+
+  <div id="panePlan" hidden>
+  <div class="h">오늘 공부할 것 <span id="planDueCount"></span></div>
+  <div class="list" id="planDueList"></div>
+
+  <div class="h" id="planSoonTitle">다가오는 계획 <span>7일 안</span></div>
+  <div id="planSoonList"></div>
+
+  <div class="h">전체 계획 <span id="planAllCount"></span></div>
+  <div class="filters" id="planFilters"></div>
+  <input class="search" id="planSearch" type="search" placeholder="🔍 제목·메모 검색" autocomplete="off">
+  <div class="list" id="planAllList"></div>
+  </div>
+
+  <div id="paneReview">
   <div class="h">오늘 복습할 것 <span id="dueCount"></span></div>
   <div class="list" id="dueList"></div>
 
@@ -206,9 +230,10 @@ button{cursor:pointer}
   <div class="filters" id="filters"></div>
   <input class="search" id="search" type="search" placeholder="🔍 제목·메모 검색" autocomplete="off">
   <div class="list" id="allList"></div>
+  </div>
 </div>
 
-<button class="fab" id="fab"><span aria-hidden="true">＋</span> 공부한 것 등록</button>
+<button class="fab" id="fab"><span aria-hidden="true">＋</span> <span id="fabText">공부한 것 등록</span></button>
 
 <script>
 "use strict";
@@ -219,12 +244,13 @@ const PRESETS = [
   { name: "짧게", list: [1, 2, 4, 7] },
   { name: "길게", list: [1, 7, 16, 35, 60] },
 ];
-const fresh = () => ({ intervals: [1, 3, 7, 14, 30], alarmHour: 8, items: [] });
+const fresh = () => ({ intervals: [1, 3, 7, 14, 30], alarmHour: 8, items: [], plans: [] });
 let state = fresh();
 
 function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
   if (!Array.isArray(state.items)) state.items = [];
+  if (!Array.isArray(state.plans)) state.plans = [];
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -276,19 +302,50 @@ function retryTomorrow(it) {
   return () => { it.retry = prev; save(); refreshAll(); };
 }
 function streak() {
-  const days = new Set(state.items.flatMap(it => it.done));
+  const days = new Set([...state.items.flatMap(it => it.done), ...state.plans.map(p => p.done).filter(Boolean)]);
   let d = days.has(todayStr()) ? todayStr() : addDays(todayStr(), -1), n = 0;
   while (days.has(d)) { n++; d = addDays(d, -1); }
   return n;
+}
+
+/* ---------- 학습계획 ----------
+   공부할 날을 정해 두고, 그날 "공부 완료"를 누르면 오늘 공부한 것으로 복습 일정이 자동으로 잡힌다.
+   "내일로 미루기"는 계획한 날을 내일로 옮긴다. */
+const planDue = p => !p.done && daysUntil(p.date) <= 0;
+function completePlan(p) {
+  const it = { id: uid(), title: p.title, subject: p.subject, studied: todayStr(), intervals: [...state.intervals], memo: p.memo, done: [], retry: "", planId: p.id };
+  if (p.sample) it.sample = true;
+  state.items.push(it);
+  p.done = todayStr(); p.reviewId = it.id;
+  save();
+  return () => { state.items = state.items.filter(x => x.id !== it.id); p.done = ""; p.reviewId = ""; save(); refreshAll(); };
+}
+function postponePlan(p) {
+  const prev = p.date; p.date = addDays(todayStr(), 1); save();
+  return () => { p.date = prev; save(); refreshAll(); };
+}
+const sortPlans = (a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title, "ko", { numeric: true });
+function planBadge(p) {
+  if (p.done) return `<span class="badge b-done">완료 ✓</span>`;
+  const d = daysUntil(p.date);
+  if (d < 0) return `<span class="badge b-late">${-d}일 밀림</span>`;
+  if (d === 0) return `<span class="badge b-today">오늘</span>`;
+  return `<span class="badge b-soon">${d === 1 ? "내일" : `D-${d}`}</span>`;
+}
+function planSub(p) {
+  if (!p.done) return `${pretty(p.date)} 공부`;
+  const it = find(p.reviewId);
+  return `${pretty(p.done)}에 공부함${it ? ` · ${finished(it) ? "복습 끝" : `다음 복습 ${short(dueDate(it))}`}` : ""}`;
 }
 
 /* ---------- 공통 ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 const find = id => state.items.find(x => x.id === id);
+const findPlan = id => state.plans.find(x => x.id === id);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 function hash(s) { let h = 0; for (const ch of s) h = (h * 31 + ch.codePointAt(0)) | 0; return Math.abs(h); }
-const subjects = () => [...new Set(state.items.map(it => it.subject).filter(Boolean))].sort();
+const subjects = () => [...new Set([...state.items, ...state.plans].map(it => it.subject).filter(Boolean))].sort();
 const subjTag = s => s ? `<span class="subj c${hash(s) % 4}">${esc(s)}</span>` : "";
 const dots = it => `<span class="dots" aria-label="${it.intervals.length}번 중 ${step(it)}번 복습">${it.intervals.map((_, i) =>
   `<i class="${i < step(it) ? "on" : i === step(it) ? "now" : ""}"></i>`).join("")}</span>`;
@@ -354,16 +411,33 @@ const closeSheet = () => history.back();
 function refreshAll() { renderHome(); for (const s of stack) s.refresh?.(); }
 
 /* ---------- 메인 화면 ---------- */
-let filter = "";
+let filter = "", planFilter = "";
+let tab = (() => { try { return localStorage.getItem("review.tab") || "review"; } catch { return "review"; } })();
+function setTab(t) {
+  tab = t;
+  try { localStorage.setItem("review.tab", t); } catch {}
+  renderHome(); scrollTo(0, 0);
+}
 function renderHome() {
   const now = new Date();
   const due = state.items.filter(isDue).sort(sortByDue);
+  const pdue = state.plans.filter(planDue).sort(sortPlans);
   const doneToday = state.items.reduce((n, it) => n + it.done.filter(d => d === todayStr()).length, 0);
-  const st = streak();
-  $("#heroDate").textContent = `${now.getMonth() + 1}월 ${now.getDate()}일 ${WD[now.getDay()]}요일${doneToday ? ` · 오늘 ${doneToday}개 복습함` : ""}`;
-  $("#heroHeadline").textContent = due.length ? `오늘 복습 ${due.length}개` : state.items.length ? "오늘 복습 끝! 👏" : "반복학습 시작하기";
-  $("#heroSub").textContent = st ? `🔥 ${st}일 연속 복습 중` : state.items.length ? "오늘 한 개만 복습해도 연속 기록이 시작돼요" : "공부한 것을 등록하면 복습할 날을 알려 드려요";
-  $("#sampleBanner").hidden = !state.items.some(it => it.sample);
+  const studiedToday = state.plans.filter(p => p.done === todayStr()).length;
+  const st = streak(), any = state.items.length || state.plans.length;
+  const did = [studiedToday && `${studiedToday}개 공부`, doneToday && `${doneToday}개 복습`].filter(Boolean).join(" · ");
+  const todo = [pdue.length && `공부 ${pdue.length}개`, due.length && `복습 ${due.length}개`].filter(Boolean).join(" · ");
+  $("#heroDate").textContent = `${now.getMonth() + 1}월 ${now.getDate()}일 ${WD[now.getDay()]}요일${did ? ` · 오늘 ${did}함` : ""}`;
+  $("#heroHeadline").textContent = todo ? `오늘 ${todo}` : any ? "오늘 할 일 끝! 👏" : "반복학습 시작하기";
+  $("#heroSub").textContent = st ? `🔥 ${st}일 연속 공부 중` : any ? "오늘 한 개만 해도 연속 기록이 시작돼요" : "공부 계획을 세우고, 공부한 것은 복습할 날을 알려 드려요";
+  $("#sampleBanner").hidden = ![...state.items, ...state.plans].some(it => it.sample);
+
+  document.querySelectorAll("[data-tab]").forEach(b => { b.classList.toggle("on", b.dataset.tab === tab); b.setAttribute("aria-selected", b.dataset.tab === tab); });
+  $("#paneReview").hidden = tab !== "review"; $("#panePlan").hidden = tab !== "plan";
+  $("#tabPlanN").hidden = !pdue.length; $("#tabPlanN").textContent = pdue.length;
+  $("#tabReviewN").hidden = !due.length; $("#tabReviewN").textContent = due.length;
+  $("#fabText").textContent = tab === "plan" ? "공부 계획 등록" : "공부한 것 등록";
+  renderPlans(pdue);
 
   $("#dueCount").textContent = `${due.length}개`;
   $("#dueList").innerHTML = due.length ? due.map(it => `
@@ -397,10 +471,60 @@ function renderHome() {
     : state.items.length ? `<div class="empty">맞는 학습이 없어요.</div>`
     : `<div class="empty">아래 <b>＋ 공부한 것 등록</b>을 눌러 오늘 공부한 것을 적어 보세요.<br>
        <button class="linkbtn" type="button" id="btnSamples">예시로 둘러보기</button></div>`;
+  if (!state.items.length && !state.plans.length) $("#planAllList").innerHTML += `<div class="empty"><button class="linkbtn" type="button" id="btnSamples2">예시로 둘러보기</button></div>`;
+}
+
+function renderPlans(pdue) {
+  $("#planDueCount").textContent = `${pdue.length}개`;
+  $("#planDueList").innerHTML = pdue.length ? pdue.map(p => `
+    <div class="due-row">
+      <button class="card" type="button" data-popen="${p.id}">
+        <span class="l">${subjTag(p.subject)}<span class="n">${esc(p.title)}</span><span class="s">${planSub(p)}</span></span>
+        <span class="r">${planBadge(p)}</span>
+      </button>
+      <div class="acts"><button class="pill fill" type="button" data-pdone="${p.id}">✓ 공부 완료</button><button class="pill tonal" type="button" data-ppost="${p.id}">내일로 미루기</button></div>
+    </div>`).join("") : `<div class="empty">${state.plans.some(p => !p.done) ? "오늘 공부할 계획이 없어요." : "공부할 계획을 세워 보세요."}</div>`;
+
+  const soon = state.plans.filter(p => !p.done && daysUntil(p.date) >= 1 && daysUntil(p.date) <= 7).sort(sortPlans);
+  $("#planSoonTitle").hidden = $("#planSoonList").hidden = !soon.length;
+  $("#planSoonList").innerHTML = soon.length ? `<div class="soon">${soon.map(p => `
+    <button type="button" data-popen="${p.id}"><span class="when">${short(p.date)}</span><span class="what">${esc(p.title)}</span></button>`).join("")}</div>` : "";
+
+  const subs = [...new Set(state.plans.map(p => p.subject).filter(Boolean))].sort();
+  if (planFilter && !subs.includes(planFilter)) planFilter = "";
+  $("#planFilters").hidden = !subs.length;
+  $("#planFilters").innerHTML = [["", "전체"], ...subs.map(s => [s, s])].map(([v, l]) =>
+    `<button class="chip ${planFilter === v ? "on" : ""}" type="button" data-pfilter="${esc(v)}">${esc(l)}</button>`).join("");
+  const q = $("#planSearch").value.trim();
+  const list = state.plans.filter(p => (!planFilter || p.subject === planFilter) && (!q || p.title.includes(q) || (p.memo || "").includes(q)))
+    .sort((a, b) => !!a.done - !!b.done || (a.done ? b.done.localeCompare(a.done) : 0) || sortPlans(a, b));
+  $("#planAllCount").textContent = `${state.plans.length}개`;
+  $("#planAllList").innerHTML = list.length ? list.map(p => `
+    <button class="card" type="button" data-popen="${p.id}">
+      <span class="l">${subjTag(p.subject)}<span class="n">${esc(p.title)}</span><span class="s">${planSub(p)}</span></span>
+      <span class="r">${planBadge(p)}${p.done && find(p.reviewId) ? dots(find(p.reviewId)) : ""}</span>
+    </button>`).join("")
+    : state.plans.length ? `<div class="empty">맞는 계획이 없어요.</div>`
+    : `<div class="empty">아래 <b>＋ 공부 계획 등록</b>을 눌러 언제 무엇을 공부할지 적어 보세요.<br>
+       계획한 날 <b>공부 완료</b>를 누르면 복습 일정이 자동으로 잡혀요.</div>`;
 }
 
 document.addEventListener("click", e => {
   const t = e.target;
+  const tb = t.closest("[data-tab]");
+  if (tb) { setTab(tb.dataset.tab); return; }
+  const pd = t.closest("[data-pdone]"), pp = t.closest("[data-ppost]");
+  if (pd || pp) {
+    const p = findPlan((pd || pp).dataset.pdone || (pd || pp).dataset.ppost);
+    if (!p) return;
+    if (pd) { const undo = completePlan(p); refreshAll(); toast(`공부 완료! 첫 복습은 ${pretty(dueDate(find(p.reviewId)))}이에요`, undo); }
+    else { const undo = postponePlan(p); refreshAll(); toast("내일로 옮겼어요", undo); }
+    return;
+  }
+  const po = t.closest("[data-popen]");
+  if (po && !po.closest(".sheet")) { openPlan(po.dataset.popen); return; }
+  const pf = t.closest("[data-pfilter]");
+  if (pf) { planFilter = pf.dataset.pfilter; renderHome(); return; }
   const done = t.closest("[data-done]"), retry = t.closest("[data-retry]");
   if (done || retry) {
     const it = find((done || retry).dataset.done || (done || retry).dataset.retry);
@@ -418,13 +542,14 @@ document.addEventListener("click", e => {
   if (open && !open.closest(".sheet")) { openDetail(open.dataset.open); return; }
   const f = t.closest("[data-filter]");
   if (f) { filter = f.dataset.filter; renderHome(); return; }
-  if (t.id === "btnSamples") addSamples();
+  if (t.id === "btnSamples" || t.id === "btnSamples2") addSamples();
 });
 $("#search").addEventListener("input", renderHome);
-$("#fab").onclick = () => openEdit(null);
+$("#planSearch").addEventListener("input", renderHome);
+$("#fab").onclick = () => tab === "plan" ? openPlanEdit(null) : openEdit(null);
 $("#btnSettings").onclick = openSettings;
-$("#btnClearSamples").onclick = () => confirmBox({ title: "예시 학습을 지울까요?", msg: "직접 등록한 학습은 그대로 남아요.", ok: "지우기",
-  onOk: () => { state.items = state.items.filter(it => !it.sample); save(); renderHome(); toast("예시를 지웠어요"); } });
+$("#btnClearSamples").onclick = () => confirmBox({ title: "예시를 지울까요?", msg: "직접 등록한 학습과 계획은 그대로 남아요.", ok: "지우기",
+  onOk: () => { state.items = state.items.filter(it => !it.sample); state.plans = state.plans.filter(p => !p.sample); save(); renderHome(); toast("예시를 지웠어요"); } });
 
 function addSamples() {
   const t = todayStr();
@@ -435,6 +560,13 @@ function addSamples() {
     mk("한국사 조선 전기 정치", "한국사", 5, [4], "태조~성종, 경국대전 완성"),
     mk("미적분 극한 기본 문제", "수학", 12, [11, 8], ""),
     mk("영어 단어 Day 1 (50개)", "영어", 3, [2], ""),
+  );
+  const pl = (title, subject, inDays, memo = "") => ({ id: uid(), sample: true, title, subject, date: addDays(t, inDays), memo, done: "", reviewId: "" });
+  state.plans.push(
+    pl("영어 단어 Day 4 (50개)", "영어", 0, "단어장 31~40쪽"),
+    pl("수학 2단원 개념 정리", "수학", 0),
+    pl("영어 단어 Day 5 (50개)", "영어", 1),
+    pl("한국사 조선 후기 정치", "한국사", 3, "탕평책, 세도정치"),
   );
   save(); renderHome();
 }
@@ -533,8 +665,92 @@ function openEdit(id) {
   });
 }
 
+/* ---------- 학습계획 상세 ---------- */
+function openPlan(id) {
+  let s;
+  const render = () => {
+    const p = findPlan(id);
+    if (!p) { closeSheet(); return; }
+    const it = p.done ? find(p.reviewId) : null, d = daysUntil(p.date);
+    s.querySelector(".inner").innerHTML = `
+      <div class="title-block">${subjTag(p.subject)}<div class="big">${esc(p.title)}</div>${planBadge(p)}
+        <span class="help" style="margin:0">${p.done ? `${pretty(p.date)}에 계획 · ${pretty(p.done)}에 공부함` : `${pretty(p.date)}에 공부할 계획`}</span></div>
+      ${p.memo ? `<div class="memo">${esc(p.memo)}</div>` : ""}
+      ${p.done ? `<div class="celebrate">✓ 공부를 마쳤어요!${it ? ` ${finished(it) ? "복습도 모두 끝냈어요 🎉" : `다음 복습은 ${pretty(dueDate(it))}이에요.`}` : ""}</div>
+        ${it ? `<button class="btn fill" type="button" data-act="review">🔁 복습 일정 보기</button>` : ""}` : ""}
+      ${!p.done && d <= 0 ? `<div class="row2" style="grid-template-columns:2fr 1fr"><button class="btn done" type="button" data-act="done">✓ 공부 완료</button><button class="btn retry" type="button" data-act="post">내일로 미루기</button></div>` : ""}
+      ${!p.done && d > 0 ? `<button class="btn done" type="button" data-act="done">✓ 오늘 미리 공부했어요</button>` : ""}
+      ${!p.done ? `<p class="help">공부 완료를 누르면 오늘 공부한 것으로 복습 일정(${state.intervals.join("·")}일 뒤)이 자동으로 잡혀요.</p>
+        <button class="btn out" type="button" data-act="cal">📅 휴대폰 캘린더에 등록</button>` : ""}
+      <button class="btn out" type="button" data-act="edit">수정</button>
+      <button class="btn danger" type="button" data-act="del">삭제</button>`;
+  };
+  s = openSheet("공부 계획", "", el => el.addEventListener("click", e => {
+    const a = e.target.closest("[data-act]")?.dataset.act, p = findPlan(id);
+    if (!a || !p) return;
+    if (a === "done") { const undo = completePlan(p); refreshAll(); toast(`공부 완료! 첫 복습은 ${pretty(dueDate(find(p.reviewId)))}이에요`, undo); }
+    if (a === "post") { const undo = postponePlan(p); refreshAll(); toast("내일로 옮겼어요", undo); }
+    if (a === "review") openDetail(p.reviewId);
+    if (a === "cal") downloadIcs([], `${p.title}-공부계획.ics`, [p]);
+    if (a === "edit") openPlanEdit(p.id);
+    if (a === "del") confirmBox({ title: "이 계획을 삭제할까요?", msg: p.done && find(p.reviewId) ? "이미 잡힌 복습 일정은 그대로 남아요." : "", ok: "삭제", danger: true,
+      onOk: () => { state.plans = state.plans.filter(x => x.id !== p.id); save(); closeSheet(); toast("삭제했어요"); } });
+  }), () => render());
+  render();
+}
+
+/* ---------- 학습계획 등록·수정: 새로 등록할 때는 여러 날로 나눠 한 번에 계획할 수 있다 ---------- */
+const GAPS = [[1, "매일"], [2, "이틀마다"], [7, "일주일마다"]];
+function openPlanEdit(id) {
+  const e = id ? findPlan(id) : null;
+  const v = e || { title: "", subject: planFilter || "", date: todayStr(), memo: "" };
+  const subs = subjects();
+  openSheet(e ? "계획 수정" : "공부 계획 등록", `
+    <div class="field" data-f="title"><label for="pTitle">무엇을 공부할까요?</label><input id="pTitle" autocomplete="off" placeholder="예: 영어 단어 Day 5, 수학 3단원" value="${esc(v.title)}"></div>
+    <div class="field"><label for="pSubj">과목·분류 (선택)</label><input id="pSubj" autocomplete="off" list="pSubjList" placeholder="예: 영어" value="${esc(v.subject)}">
+      <datalist id="pSubjList">${subs.map(s => `<option value="${esc(s)}">`).join("")}</datalist></div>
+    ${subs.length ? `<div class="chips">${subs.map(s => `<button class="chip" type="button" data-subj="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : ""}
+    <div class="field" data-f="date"><label for="pDate">${e ? "공부할 날" : "공부할 날 (첫날)"}</label><input id="pDate" type="date" value="${v.date}"></div>
+    ${e ? "" : `<div class="sec">여러 날로 나눠 계획하기</div>
+    <div class="row2">
+      <div class="field"><label for="pCount">횟수</label><select id="pCount">${Array.from({ length: 30 }, (_, i) => `<option value="${i + 1}">${i ? `${i + 1}번` : "한 번만"}</option>`).join("")}</select></div>
+      <div class="field"><label for="pGap">간격</label><select id="pGap">${GAPS.map(([n, l]) => `<option value="${n}">${l}</option>`).join("")}</select></div>
+    </div>`}
+    <div class="hint" id="pPrev"></div>
+    <div class="field"><label for="pMemo">메모 (선택)</label><textarea id="pMemo" rows="3" placeholder="교재, 페이지, 목표 등">${esc(v.memo)}</textarea></div>
+    <div class="errmsg" id="pErr" hidden></div>
+    <button class="btn fill" type="button" id="pSave">저장</button>`, s => {
+    const q = sel => s.querySelector(sel);
+    const count = () => e ? 1 : +q("#pCount").value, gap = () => e ? 1 : +q("#pGap").value;
+    const titles = () => { const t = q("#pTitle").value.trim() || "공부", n = count(); return Array.from({ length: n }, (_, i) => n > 1 ? `${t} (${i + 1}/${n})` : t); };
+    const upd = () => {
+      s.querySelectorAll("[data-subj]").forEach(b => b.classList.toggle("on", b.dataset.subj === q("#pSubj").value.trim()));
+      const d = q("#pDate").value;
+      if (!d) { q("#pPrev").textContent = "공부할 날을 골라 주세요."; return; }
+      const n = count(), dates = Array.from({ length: n }, (_, i) => addDays(d, i * gap()));
+      q("#pPrev").textContent = n > 1 ? `${n}번 공부: ${dates.slice(0, 6).map(short).join(", ")}${n > 6 ? ` … ${short(dates[n - 1])}까지` : ""}\n제목 뒤에 (1/${n}), (2/${n})… 가 붙어요.` : `${pretty(d)}에 공부할 계획이에요.`;
+      q("#pPrev").style.whiteSpace = "pre-line";
+    };
+    s.querySelectorAll("[data-subj]").forEach(b => b.onclick = () => { q("#pSubj").value = b.dataset.subj; upd(); });
+    ["#pDate", "#pSubj", "#pCount", "#pGap"].forEach(sel => q(sel)?.addEventListener("input", upd)); upd();
+    q("#pSave").onclick = () => {
+      const title = q("#pTitle").value.trim(), date = q("#pDate").value;
+      q('[data-f="title"]').classList.toggle("err", !title); q('[data-f="date"]').classList.toggle("err", !date);
+      const msgs = [!title && "무엇을 공부할지 적어 주세요", !date && "공부할 날을 골라 주세요"].filter(Boolean);
+      q("#pErr").hidden = !msgs.length; q("#pErr").textContent = msgs.join(" · ");
+      if (msgs.length) return;
+      const data = { subject: q("#pSubj").value.trim(), memo: q("#pMemo").value.trim() };
+      if (e) Object.assign(e, data, { title, date });
+      else titles().forEach((t, i) => state.plans.push({ id: uid(), title: t, date: addDays(date, i * gap()), ...data, done: "", reviewId: "" }));
+      save(); closeSheet();
+      toast(e ? "수정했어요" : count() > 1 ? `계획 ${count()}개를 등록했어요` : `${pretty(date)}에 공부할 계획을 등록했어요`);
+    };
+    if (!e) setTimeout(() => q("#pTitle").focus(), 300);
+  });
+}
+
 /* ---------- 캘린더(.ics): 복습하는 날 정해진 시각에 휴대폰이 알려 준다 ---------- */
-function downloadIcs(items, name) {
+function downloadIcs(items, name, plans = []) {
   const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   const text = s => s.replace(/[\\,;]/g, m => "\\" + m).replace(/\n/g, "\\n");
   const h = pad(state.alarmHour), events = [];
@@ -546,10 +762,18 @@ function downloadIcs(items, name) {
       `DESCRIPTION:${text("반복학습 앱을 열어 복습하고 ‘복습 완료’를 눌러 주세요.")}`,
       "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${text(`복습할 시간이에요: ${it.title}`)}`, "TRIGGER:PT0M", "END:VALARM", "END:VEVENT");
   }
-  if (!events.length) { toast("등록할 남은 복습이 없어요"); return; }
+  for (const p of plans) {
+    const d = (p.date < todayStr() ? todayStr() : p.date).replaceAll("-", "");
+    events.push("BEGIN:VEVENT", `UID:plan-${p.id}-${d}@review-web`, `DTSTAMP:${now}`,
+      `DTSTART:${d}T${h}0000`, `DTEND:${d}T${h}3000`,
+      `SUMMARY:${text(`📝 공부: ${p.title}`)}`,
+      `DESCRIPTION:${text("반복학습 앱을 열어 공부하고 ‘공부 완료’를 눌러 주세요.")}`,
+      "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${text(`공부할 시간이에요: ${p.title}`)}`, "TRIGGER:PT0M", "END:VALARM", "END:VEVENT");
+  }
+  if (!events.length) { toast("등록할 남은 일정이 없어요"); return; }
   const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//review-web//KO", "CALSCALE:GREGORIAN", ...events, "END:VCALENDAR"].join("\r\n");
   download(new File([ics], name, { type: "text/calendar" }));
-  toast(`캘린더 파일을 열고 ‘추가’를 누르면, 복습하는 날 ${state.alarmHour}시에 휴대폰이 알려 줘요.`);
+  toast(`캘린더 파일을 열고 ‘추가’를 누르면, 그날 ${state.alarmHour}시에 휴대폰이 알려 줘요.`);
 }
 function download(file) {
   const url = URL.createObjectURL(file), a = document.createElement("a");
@@ -579,8 +803,8 @@ function openSettings() {
     <button class="btn fill" type="button" id="sSave">설정 저장</button>
 
     <div class="sec">캘린더 알림</div>
-    <p class="help">남은 복습 날짜를 모두 휴대폰 캘린더에 넣어요. 늦게 복습하면 날짜가 바뀌니, 그럴 땐 다시 등록해 주세요.</p>
-    <button class="btn out" type="button" id="sCal">📅 모든 복습을 캘린더에 등록</button>
+    <p class="help">남은 공부 계획과 복습 날짜를 모두 휴대폰 캘린더에 넣어요. 미루거나 늦게 복습하면 날짜가 바뀌니, 그럴 땐 다시 등록해 주세요.</p>
+    <button class="btn out" type="button" id="sCal">📅 모든 계획·복습을 캘린더에 등록</button>
 
     <div class="sec">데이터 백업</div>
     <p class="help">학습 기록은 이 휴대폰 안에만 저장돼요. 휴대폰을 바꾸기 전에 백업 파일을 저장해 두세요.</p>
@@ -601,7 +825,7 @@ function openSettings() {
       state.intervals = iv; state.alarmHour = +q("#sHour").value;
       save(); closeSheet(); toast("저장했어요");
     };
-    q("#sCal").onclick = () => downloadIcs(state.items.filter(it => !finished(it)), `반복학습-복습일정-${todayStr()}.ics`);
+    q("#sCal").onclick = () => downloadIcs(state.items.filter(it => !finished(it)), `반복학습-일정-${todayStr()}.ics`, state.plans.filter(p => !p.done));
     q("#sExport").onclick = () => shareOrDownload(
       new File([JSON.stringify({ app: "review-web", version: 1, savedAt: new Date().toISOString(), ...state }, null, 2)], `반복학습-백업-${todayStr()}.json`, { type: "application/json" }),
       "백업 파일을 저장했어요. 카카오톡 ‘나와의 채팅’이나 클라우드에도 보관해 두세요.");
@@ -612,14 +836,14 @@ function openSettings() {
       let data;
       try { data = JSON.parse(await f.text()); if (!Array.isArray(data.items)) throw 0; }
       catch { toast("백업 파일을 읽을 수 없어요"); return; }
-      confirmBox({ title: "백업 불러오기", msg: `학습 ${data.items.length}개가 들어 있는 백업으로 바꿔요.\n지금 있는 기록은 지워져요.`, ok: "불러오기",
+      confirmBox({ title: "백업 불러오기", msg: `학습 ${data.items.length}개${Array.isArray(data.plans) ? `, 계획 ${data.plans.length}개` : ""}가 들어 있는 백업으로 바꿔요.\n지금 있는 기록은 지워져요.`, ok: "불러오기",
         onOk: () => {
-          state = { intervals: parseIntervals((data.intervals || []).join(",")) || fresh().intervals, alarmHour: data.alarmHour || 8, items: data.items };
+          state = { intervals: parseIntervals((data.intervals || []).join(",")) || fresh().intervals, alarmHour: data.alarmHour || 8, items: data.items, plans: Array.isArray(data.plans) ? data.plans : [] };
           save(); closeSheet(); toast(`학습 ${data.items.length}개를 불러왔어요`);
         } });
     };
     q("#sHow").onclick = openInstallHow;
-    q("#sWipe").onclick = () => confirmBox({ title: "모든 데이터를 지울까요?", msg: "학습과 복습 기록이 모두 지워지고 되돌릴 수 없어요.\n먼저 백업을 저장해 두는 걸 권해요.", ok: "모두 지우기", danger: true,
+    q("#sWipe").onclick = () => confirmBox({ title: "모든 데이터를 지울까요?", msg: "학습·계획·복습 기록이 모두 지워지고 되돌릴 수 없어요.\n먼저 백업을 저장해 두는 걸 권해요.", ok: "모두 지우기", danger: true,
       onOk: () => { state = fresh(); save(); closeSheet(); toast("모든 데이터를 지웠어요"); } });
   });
 }
