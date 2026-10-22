@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light only">
 <title>반복학습</title>
 <meta name="description" content="망각곡선에 맞춰 복습 날짜를 알려 주는 반복학습 앱">
 <meta name="theme-color" content="#2563EB" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1D4ED8" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#2563EB" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -18,16 +19,16 @@
 <link rel="preload" href="gowun-batang-bold.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 @font-face{font-family:"Gowun Batang";font-weight:700;font-display:swap;src:url(gowun-batang-bold.woff2) format("woff2")}
-/* 선명한 그라데이션: 파랑→남색 머리띠, 보라 오늘 카드, 초록 완료·주황 헷갈려요 버튼, 블루그레이 바탕 */
+/* 컬러풀: 파랑→남색 머리띠, 초록 오늘 카드, 주홍 복습 완료·보라 헷갈려요 버튼, 블루그레이 바탕 */
 :root{
   --bg:#f0f1fa; --bg-grad:linear-gradient(180deg,#eceff9 0%,#f1effb 55%,#f7f5fd 100%);
   --surface:#fff; --ink:#1f1d33; --muted:#6c6a86; --line:#e3e4f2;
   --accent:#4f46e5; --on-accent:#fff; --container:#e0e7ff; --on-container:#1e1b6b;
   --head:linear-gradient(120deg,#2563eb,#4f46e5); --head-shadow:rgb(79 70 229 / .28);
   --grad:linear-gradient(120deg,#2563eb,#4f46e5); --grad-shadow:rgb(79 70 229 / .3);
-  --green:linear-gradient(120deg,#22c55e,#16a34a); --green-shadow:rgb(22 163 74 / .3);
-  --orange:linear-gradient(120deg,#f97316,#ef4444); --orange-shadow:rgb(239 68 68 / .28);
-  --hero:linear-gradient(120deg,#a855f7,#9333ea); --hero-ink:#fff; --hero-shadow:0 8px 22px rgb(147 51 234 / .3); --hero-a:#e9d5ff;
+  --done-btn:linear-gradient(120deg,#f97316,#ef4444); --done-btn-shadow:rgb(239 68 68 / .3);
+  --retry-btn:linear-gradient(120deg,#a855f7,#9333ea); --retry-btn-shadow:rgb(147 51 234 / .3);
+  --hero:linear-gradient(120deg,#22c55e,#16a34a); --hero-ink:#fff; --hero-shadow:0 8px 22px rgb(22 163 74 / .3); --hero-a:#bbf7d0;
   --today-bg:#ffe0d1; --today-fg:#8a3a17; --late-bg:#ffdad6; --late-fg:#93000a;
   --soon-bg:#e4dfff; --soon-fg:#3e3487; --done-bg:#d8f0e3; --done-fg:#1f6b45;
   --dot-off:#e2ddf2; --danger:#ba1a1a; --scrim:rgb(34 29 51 / .42);
@@ -37,20 +38,7 @@
   --body:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
   color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#14151f; --bg-grad:linear-gradient(180deg,#161a2c 0%,#14151f 60%);
-  --surface:#1f2030; --ink:#e8e8f6; --muted:#a2a2bb; --line:#30324a;
-  --accent:#a5b4fc; --on-accent:#1e1b6b; --container:#312e81; --on-container:#e0e7ff;
-  --head:linear-gradient(120deg,#1d4ed8,#4338ca); --head-shadow:rgb(0 0 0 / .3);
-  --grad:linear-gradient(120deg,#2563eb,#4f46e5); --grad-shadow:rgb(0 0 0 / .3);
-  --green:linear-gradient(120deg,#16a34a,#15803d); --green-shadow:rgb(0 0 0 / .3);
-  --orange:linear-gradient(120deg,#ea580c,#dc2626); --orange-shadow:rgb(0 0 0 / .3);
-  --hero:linear-gradient(120deg,#7e22ce,#6b21a8); --hero-ink:#fff; --hero-shadow:none; --hero-a:#e9d5ff;
-  --today-bg:#4d2b1d; --today-fg:#ffb998; --late-bg:#5c1f1b; --late-fg:#ffb4ab;
-  --soon-bg:#2f2860; --soon-fg:#d5ceff; --done-bg:#1d3a2b; --done-fg:#9fd9b8;
-  --dot-off:#3a3450; --danger:#ffb4ab; --scrim:rgb(0 0 0 / .55);
-  --s0:#2f2860; --s0i:#d5ceff; --s1:#4a2236; --s1i:#ffcfe0; --s2:#1d3a2b; --s2i:#9fd9b8; --s3:#3d3214; --s3i:#f2d27a;
-  --shadow:none; color-scheme:dark}}
+/* 휴대폰이 어두운 모드여도 항상 밝은 화면으로 보여 준다 */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;-webkit-text-size-adjust:100%}
 body{min-height:100dvh;overscroll-behavior-y:none}
@@ -105,8 +93,8 @@ button{cursor:pointer}
 .due-row .card{box-shadow:none;border-radius:0}
 .due-row .acts{display:grid;grid-template-columns:2fr 1fr;gap:8px;padding:0 12px 12px}
 .pill{border:0;border-radius:99px;padding:11px 10px;font-weight:700;font-size:.92rem}
-.pill.fill,.btn.green{background:var(--green);color:#fff;box-shadow:0 4px 12px var(--green-shadow)}
-.pill.tonal,.btn.orange{background:var(--orange);color:#fff;box-shadow:0 4px 12px var(--orange-shadow)}
+.pill.fill,.btn.done{background:var(--done-btn);color:#fff;box-shadow:0 4px 12px var(--done-btn-shadow)}
+.pill.tonal,.btn.retry{background:var(--retry-btn);color:#fff;box-shadow:0 4px 12px var(--retry-btn-shadow)}
 
 .soon{background:var(--surface);border-radius:20px;box-shadow:var(--shadow);padding:6px 16px}
 .soon button{width:100%;border:0;background:none;text-align:left;display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
@@ -470,8 +458,8 @@ function openDetail(id) {
         <span class="help" style="margin:0">${pretty(it.studied)}에 공부함 · ${stepText(it)}</span></div>
       ${it.memo ? `<div class="memo">${esc(it.memo)}</div>` : ""}
       ${finished(it) ? `<div class="celebrate">🎉 ${it.intervals.length}번 복습을 모두 끝냈어요! 오래 기억에 남을 거예요.</div>` : ""}
-      ${due && daysUntil(due) <= 0 ? `<div class="row2" style="grid-template-columns:2fr 1fr"><button class="btn green" type="button" data-act="done">✓ 복습 완료</button><button class="btn orange" type="button" data-act="retry">헷갈려요</button></div>` : ""}
-      ${due && daysUntil(due) > 0 ? `<button class="btn green" type="button" data-act="done">✓ 오늘 미리 복습했어요</button>` : ""}
+      ${due && daysUntil(due) <= 0 ? `<div class="row2" style="grid-template-columns:2fr 1fr"><button class="btn done" type="button" data-act="done">✓ 복습 완료</button><button class="btn retry" type="button" data-act="retry">헷갈려요</button></div>` : ""}
+      ${due && daysUntil(due) > 0 ? `<button class="btn done" type="button" data-act="done">✓ 오늘 미리 복습했어요</button>` : ""}
       <div class="sec">복습 일정</div>
       <ol class="timeline">${rows}</ol>
       ${!finished(it) ? `<button class="btn out" type="button" data-act="cal">📅 남은 복습을 휴대폰 캘린더에 등록</button>` : ""}
