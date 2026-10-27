@@ -154,6 +154,21 @@ button{cursor:pointer}
 .hint{font-size:.88rem;background:var(--container);color:var(--on-container);border-radius:14px;padding:11px 14px;line-height:1.5}
 .help{font-size:.82rem;color:var(--muted);line-height:1.55;margin:0 4px}
 .sec{font-family:var(--display);font-weight:700;font-size:1.05rem;margin:14px 2px 0}
+/* 독서일기: 쓸 때마다 날짜가 붙은 기록이 쌓인다 */
+.journal{display:flex;flex-direction:column;gap:10px}
+.j-write{background:var(--surface);border-radius:18px;box-shadow:var(--shadow);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.j-write textarea,.j-entry textarea{border:0;background:var(--bg);border-radius:12px;padding:10px 12px;min-height:84px;font:inherit;font-size:.95rem;line-height:1.55;resize:vertical;outline:none}
+.j-write textarea:focus,.j-entry textarea:focus{box-shadow:0 0 0 2px var(--accent)}
+.j-row{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.8rem;color:var(--muted)}
+.j-btn{border:0;border-radius:99px;background:var(--grad);color:#fff;font-weight:700;padding:8px 18px;font-size:.9rem}
+.j-btn.light{background:var(--bg);color:var(--muted)}
+.j-entry{background:var(--surface);border-radius:18px;box-shadow:var(--shadow);padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.j-entry .d{font-size:.78rem;color:var(--accent);font-weight:700;display:flex;justify-content:space-between;gap:8px}
+.j-entry .d span{color:var(--muted);font-weight:400}
+.j-entry p{margin:0;font-size:.93rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.j-acts{display:flex;justify-content:flex-end;gap:14px}
+.j-acts button{border:0;background:none;color:var(--muted);font-size:.8rem;padding:2px}
+.j-acts button.del{color:var(--danger)}
 .celebrate{text-align:center;border-radius:20px;background:var(--done-bg);color:var(--done-fg);padding:16px;font-weight:700}
 
 .dialog-wrap{position:fixed;inset:0;background:var(--scrim);z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -244,13 +259,14 @@ const PRESETS = [
   { name: "짧게", list: [1, 2, 4, 7] },
   { name: "길게", list: [1, 7, 16, 35, 60] },
 ];
-const fresh = () => ({ intervals: [1, 3, 7, 14, 30], alarmHour: 8, items: [], plans: [] });
+const fresh = () => ({ intervals: [1, 3, 7, 14, 30], alarmHour: 8, items: [], plans: [], journals: {} });
 let state = fresh();
 
 function load() {
   try { const raw = localStorage.getItem(KEY); if (raw) state = Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
   if (!Array.isArray(state.items)) state.items = [];
   if (!Array.isArray(state.plans)) state.plans = [];
+  if (!state.journals || typeof state.journals !== "object") state.journals = {};
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -571,6 +587,64 @@ function addSamples() {
   save(); renderHome();
 }
 
+/* ---------- 독서일기 ----------
+   계획과, 그 계획을 공부 완료해서 생긴 복습 학습은 같은 일기를 함께 쓴다 (열쇠: 계획 id). */
+const jKeyItem = it => it.planId || it.id;
+const journal = key => state.journals[key] ?? [];
+const jDrafts = {};       // 쓰다 만 글 (화면을 다시 그려도 남게)
+let jEditing = null;      // 고치는 중인 기록 id
+const clock = iso => { const d = new Date(iso), h = d.getHours(); return `${h < 12 ? "오전" : "오후"} ${h % 12 || 12}:${pad(d.getMinutes())}`; };
+function journalHtml(key) {
+  const list = [...journal(key)].sort((a, b) => b.at.localeCompare(a.at));
+  return `<div class="journal" data-jkey="${esc(key)}">
+    <div class="sec">📖 독서일기</div>
+    <div class="j-write"><textarea data-j="draft" rows="3" placeholder="오늘 읽고 느낀 점, 기억할 문장…">${esc(jDrafts[key] || "")}</textarea>
+      <div class="j-row"><span>${pretty(todayStr())}</span><button class="j-btn" type="button" data-j="save">기록 저장</button></div></div>
+    ${list.map(en => `<div class="j-entry" data-jid="${en.id}">
+      <div class="d">${pretty(ymd(new Date(en.at)))} <span>${clock(en.at)}</span></div>
+      ${jEditing === en.id
+        ? `<textarea data-j="edittext" rows="3">${esc(en.text)}</textarea>
+           <div class="j-acts"><button type="button" data-j="cancel">취소</button><button class="j-btn" type="button" data-j="ok">저장</button></div>`
+        : `<p>${esc(en.text)}</p><div class="j-acts"><button type="button" data-j="edit">수정</button><button class="del" type="button" data-j="del">삭제</button></div>`}
+    </div>`).join("")}
+  </div>`;
+}
+/** 시트 안의 독서일기 칸을 움직이게 한다 (시트마다 한 번) */
+function bindJournal(sheet) {
+  // 같은 일기가 계획·복습 두 시트에 함께 열려 있을 수 있으니 모두 다시 그린다
+  const redraw = box => document.querySelectorAll(".journal").forEach(b => { if (b.dataset.jkey === box.dataset.jkey) b.outerHTML = journalHtml(b.dataset.jkey); });
+  sheet.addEventListener("input", e => {
+    const box = e.target.closest(".journal");
+    if (box && e.target.dataset.j === "draft") jDrafts[box.dataset.jkey] = e.target.value;
+  });
+  sheet.addEventListener("click", e => {
+    const a = e.target.closest("[data-j]")?.dataset.j, box = e.target.closest(".journal");
+    if (!a || !box || a === "draft" || a === "edittext") return;
+    const key = box.dataset.jkey, id = e.target.closest(".j-entry")?.dataset.jid;
+    const list = state.journals[key] ?? (state.journals[key] = []);
+    const en = list.find(x => x.id === id);
+    if (a === "save") {
+      const text = (jDrafts[key] || "").trim();
+      if (!text) { toast("기록할 내용을 적어 주세요"); box.querySelector("textarea").focus(); return; }
+      list.push({ id: uid(), at: new Date().toISOString(), text });
+      delete jDrafts[key]; save(); redraw(box); toast("독서일기에 기록했어요");
+    }
+    if (a === "edit") { jEditing = id; redraw(box); }
+    if (a === "cancel") { jEditing = null; redraw(box); }
+    if (a === "ok" && en) {
+      const text = box.querySelector(`[data-jid="${id}"] textarea`).value.trim();
+      if (!text) { toast("내용이 비어 있어요. 지우려면 삭제를 눌러 주세요"); return; }
+      en.text = text; jEditing = null; save(); redraw(box); toast("고쳤어요");
+    }
+    if (a === "del" && en) confirmBox({ title: "이 기록을 지울까요?", msg: en.text.slice(0, 60), ok: "삭제", danger: true,
+      onOk: () => { state.journals[key] = list.filter(x => x.id !== id); save(); redraw(box); toast("지웠어요"); } });
+  });
+}
+/** 계획이나 학습을 지울 때, 그 일기를 함께 쓰는 쪽이 남아 있지 않으면 일기도 지운다 */
+function dropJournalIfOrphan(key) {
+  if (!state.plans.some(p => p.id === key) && !state.items.some(it => jKeyItem(it) === key)) delete state.journals[key];
+}
+
 /* ---------- 학습 상세 ---------- */
 function openDetail(id) {
   let s;
@@ -596,7 +670,8 @@ function openDetail(id) {
       <ol class="timeline">${rows}</ol>
       ${!finished(it) ? `<button class="btn out" type="button" data-act="cal">📅 남은 복습을 휴대폰 캘린더에 등록</button>` : ""}
       <div class="row2"><button class="btn out" type="button" data-act="edit">수정</button><button class="btn out" type="button" data-act="reset">처음부터 다시</button></div>
-      <button class="btn danger" type="button" data-act="del">삭제</button>`;
+      <button class="btn danger" type="button" data-act="del">삭제</button>
+      ${journalHtml(jKeyItem(it))}`;
   };
   s = openSheet("학습 정보", "", el => el.addEventListener("click", e => {
     const a = e.target.closest("[data-act]")?.dataset.act, it = find(id);
@@ -608,8 +683,9 @@ function openDetail(id) {
     if (a === "reset") confirmBox({ title: "처음부터 다시 할까요?", msg: "복습 기록을 지우고, 오늘 공부한 것으로 다시 시작해요.", ok: "다시 시작",
       onOk: () => { it.done = []; it.retry = ""; it.studied = todayStr(); save(); refreshAll(); toast(`첫 복습은 ${pretty(dueDate(it))}이에요`); } });
     if (a === "del") confirmBox({ title: "이 학습을 삭제할까요?", msg: `‘${it.title}’과 복습 기록이 모두 지워져요.`, ok: "삭제", danger: true,
-      onOk: () => { state.items = state.items.filter(x => x.id !== it.id); save(); closeSheet(); toast("삭제했어요"); } });
+      onOk: () => { state.items = state.items.filter(x => x.id !== it.id); dropJournalIfOrphan(jKeyItem(it)); save(); closeSheet(); toast("삭제했어요"); } });
   }), () => render());
+  bindJournal(s);
   render();
 }
 
@@ -683,7 +759,8 @@ function openPlan(id) {
       ${!p.done ? `<p class="help">공부 완료를 누르면 오늘 공부한 것으로 복습 일정(${state.intervals.join("·")}일 뒤)이 자동으로 잡혀요.</p>
         <button class="btn out" type="button" data-act="cal">📅 휴대폰 캘린더에 등록</button>` : ""}
       <button class="btn out" type="button" data-act="edit">수정</button>
-      <button class="btn danger" type="button" data-act="del">삭제</button>`;
+      <button class="btn danger" type="button" data-act="del">삭제</button>
+      ${journalHtml(p.id)}`;
   };
   s = openSheet("공부 계획", "", el => el.addEventListener("click", e => {
     const a = e.target.closest("[data-act]")?.dataset.act, p = findPlan(id);
@@ -694,8 +771,9 @@ function openPlan(id) {
     if (a === "cal") downloadIcs([], `${p.title}-공부계획.ics`, [p]);
     if (a === "edit") openPlanEdit(p.id);
     if (a === "del") confirmBox({ title: "이 계획을 삭제할까요?", msg: p.done && find(p.reviewId) ? "이미 잡힌 복습 일정은 그대로 남아요." : "", ok: "삭제", danger: true,
-      onOk: () => { state.plans = state.plans.filter(x => x.id !== p.id); save(); closeSheet(); toast("삭제했어요"); } });
+      onOk: () => { state.plans = state.plans.filter(x => x.id !== p.id); dropJournalIfOrphan(p.id); save(); closeSheet(); toast("삭제했어요"); } });
   }), () => render());
+  bindJournal(s);
   render();
 }
 
@@ -838,7 +916,7 @@ function openSettings() {
       catch { toast("백업 파일을 읽을 수 없어요"); return; }
       confirmBox({ title: "백업 불러오기", msg: `학습 ${data.items.length}개${Array.isArray(data.plans) ? `, 계획 ${data.plans.length}개` : ""}가 들어 있는 백업으로 바꿔요.\n지금 있는 기록은 지워져요.`, ok: "불러오기",
         onOk: () => {
-          state = { intervals: parseIntervals((data.intervals || []).join(",")) || fresh().intervals, alarmHour: data.alarmHour || 8, items: data.items, plans: Array.isArray(data.plans) ? data.plans : [] };
+          state = { intervals: parseIntervals((data.intervals || []).join(",")) || fresh().intervals, alarmHour: data.alarmHour || 8, items: data.items, plans: Array.isArray(data.plans) ? data.plans : [], journals: data.journals && typeof data.journals === "object" ? data.journals : {} };
           save(); closeSheet(); toast(`학습 ${data.items.length}개를 불러왔어요`);
         } });
     };
